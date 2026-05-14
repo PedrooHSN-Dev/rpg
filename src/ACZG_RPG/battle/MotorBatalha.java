@@ -13,18 +13,15 @@ public class MotorBatalha {
     private final EstadoJogo estado;
     private final Monstro monstro;
     private final InterfaceUsuario ui;
+    private final boolean batalhaWorm;
     private final Random gerador;
 
-    private final int numeroSecretoJogador;
-    private Item ultimoItemUtilizadoJogador;
-
-    private final boolean batalhaWorm;
-    private boolean wormExposto;
+    private int numeroSecretoJogador;
     private int posicaoWorm;
-
+    private boolean wormExposto;
     private boolean monstroAtordoado;
-    private boolean modoBerserker;
-    private boolean eventoGloziumOcorreu;
+    private Item ultimoItemUtilizadoJogador;
+    private int turnosRecuperacaoVanish = 0;
 
     public MotorBatalha(EstadoJogo estado, Monstro monstro, InterfaceUsuario ui, boolean batalhaWorm) {
         this.estado = estado;
@@ -32,84 +29,46 @@ public class MotorBatalha {
         this.ui = ui;
         this.batalhaWorm = batalhaWorm;
         this.gerador = new Random();
-
-        this.numeroSecretoJogador = gerador.nextInt(estado.getPontosVidaMaxima()) + 1;
-        this.wormExposto = false;
         this.monstroAtordoado = false;
-        this.modoBerserker = false;
-        this.eventoGloziumOcorreu = false;
 
-        if (this.batalhaWorm) {
+        if (batalhaWorm) {
             this.posicaoWorm = gerador.nextInt(monstro.getPontosVidaMaxima()) + 1;
+            this.wormExposto = false;
         }
     }
 
     public boolean iniciar() {
-        estado.resetarErrosBomba();
-        estado.setPenalidadeFaturamentus(0);
-        estado.setPenalidadeAzah(false);
-
+        this.numeroSecretoJogador = gerador.nextInt(estado.getPontosVidaMaxima()) + 1;
         ui.imprimirNarrativa("Numero secreto sorteado para Hot Dog: " + numeroSecretoJogador);
         ui.pausar();
 
-        while (monstro.isVivo() && estado.isVivo()) {
-            if (verificarEventoGlozium()) {
-                if (!estado.isVivo()) {
-                    return false;
-                }
-            }
+        while (estado.isVivo() && monstro.isVivo()) {
+            imprimirCabecalhoBatalha();
+            turnoJogador();
 
-            exibirStatus();
-
-            if (!executarTurnoJogador()) {
-                return false;
-            }
-
-            if (monstro.isVivo()) {
-                if (monstroAtordoado) {
-                    ui.imprimirNarrativa(monstro.getNome() + " esta atordoado e perde o turno.");
-                    monstroAtordoado = false;
-                } else {
-                    executarTurnoMonstro();
-                }
-            }
-        }
-
-        if (estado.isVivo()) {
-            ui.imprimirNarrativa("Voce derrotou " + monstro.getNome() + "!");
-            estado.vencerBatalha();
-            return true;
-        } else {
-            ui.imprimirNarrativa("Hot Dog foi derrotado.");
-            return false;
-        }
-    }
-
-    private boolean verificarEventoGlozium() {
-        if (monstro.getNome().equals("Glozium") && !estado.isSalsichinhaVivo() && !eventoGloziumOcorreu) {
-            if (monstro.getPontosVida() <= monstro.getPontosVidaMaxima() * 0.8) {
-                eventoGloziumOcorreu = true;
-                ui.imprimirNarrativa("Glozium interrompe o combate e invoca as gargulas captchas.");
-                ui.imprimirFala("Glozium", "Desista de tudo, entregue a espada e seu companheiro vivera. Recuse e ele morrera.");
-
-                boolean desistir = ui.lerSimNao("Voce deseja desistir para salvar o Salsichinha?");
-                if (desistir) {
-                    ui.imprimirNarrativa("Glozium liberta heroi e mascote, que sobrevivem desonrados.");
-                    ui.imprimirNarrativa("Glozium destroi o mundo. Fim de jogo.");
-                    estado.receberDano(estado.getPontosVidaMaxima() * 99);
-                } else {
-                    ui.imprimirNarrativa("Glozium elimina Salsichinha em frente aos olhos de Hot Dog.");
-                    modoBerserker = true;
-                    estado.aumentarVidaMaxima(50);
-                    ui.imprimirNarrativa("Furia incontrolavel! Modo Berserker ativado: Dano triplicado e 50 pontos de vida ganhos.");
-                }
+            if (!monstro.isVivo()) {
+                ui.imprimirNarrativa("Voce derrotou " + monstro.getNome() + "!");
+                estado.vencerBatalha();
+                estado.adicionarEnergiaSimulador();
                 return true;
+            }
+
+            if (monstroAtordoado) {
+                ui.imprimirNarrativa("O monstro esta atordoado e pulou o turno!");
+                monstroAtordoado = false;
+            } else {
+                executarTurnoMonstro();
+            }
+
+            if (!estado.isVivo()) {
+                ui.imprimirNarrativa("Hot Dog foi derrotado.");
+                return false;
             }
         }
         return false;
     }
 
-    private void exibirStatus() {
+    private void imprimirCabecalhoBatalha() {
         ui.imprimir("\n==================================================");
         ui.imprimir(estado.obterBarraStatus());
         ui.imprimir("Inimigo: " + monstro.getNome() + " - HP: " + monstro.getPontosVida() + "/" + monstro.getPontosVidaMaxima());
@@ -119,93 +78,86 @@ public class MotorBatalha {
         ui.imprimir("==================================================");
     }
 
-    private boolean executarTurnoJogador() {
+    private void turnoJogador() {
         ui.imprimir("\nSeu turno:");
-        escolherItemEquipamento();
+        exibirMenuItens();
 
-        if (!estado.isVivo()) {
-            return true;
-        }
+        boolean acaoValida = false;
+        while (!acaoValida) {
+            String escolha = ui.lerEntrada("Selecione o numero do item ou [S]:").toUpperCase();
 
-        if (batalhaWorm && !wormExposto && estado.getItemEquipado() != Item.BOMBA_MAGICA) {
-            ui.imprimirNarrativa("O Worm esta enterrado. E necessario usar a Bomba Magica antes de atacar.");
-            return true;
-        }
-
-        String acao = ui.lerEntrada("Deseja [A]tacar ou [D]esistir da missao?").toUpperCase();
-        if (acao.equals("D")) {
-            if (ui.lerSimNao("Tem certeza que deseja abandonar a missao?")) {
-                return false;
+            if (escolha.equals("S")) {
+                estado.alternarSalsichinhaAtaque();
+                ui.imprimirNarrativa("Postura do Salsichinha alterada.");
+                imprimirCabecalhoBatalha();
+                exibirMenuItens();
+            } else {
+                try {
+                    int indice = Integer.parseInt(escolha) - 1;
+                    if (indice >= 0 && indice < estado.getInventario().size()) {
+                        Item itemSelecionado = estado.getInventario().get(indice);
+                        estado.setItemEquipado(itemSelecionado);
+                        acaoValida = true;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
             }
         }
 
-        Item item = estado.getItemEquipado();
-        ultimoItemUtilizadoJogador = item;
-        int danoCausado = processarItemJogador(item);
+        ui.imprimirNarrativa("Item equipado: " + estado.getItemEquipado().getNome());
+        String acao = ui.lerEntrada("Deseja [A]tacar ou [D]esistir da missao?").toUpperCase();
 
-        if (estado.isSalsichinhaAtivoParaAtaque() && danoCausado > 0) {
-            danoCausado += 1;
-            ui.imprimirNarrativa("Salsichinha ataca e causa 1 de dano adicional.");
+        if (acao.equals("A")) {
+            ultimoItemUtilizadoJogador = estado.getItemEquipado();
+            int dano = processarItemJogador(estado.getItemEquipado());
+
+            if (estado.isSalsichinhaAtivoParaAtaque() && estado.getItemEquipado() != Item.VANISH) {
+                ui.imprimirNarrativa("Salsichinha ajudou no ataque! (+1 de dano)");
+                dano += 1;
+            }
+
+            if (dano > 0) {
+                monstro.receberDano(dano);
+                ui.imprimirNarrativa(monstro.getNome() + " recebeu " + dano + " pontos de dano.");
+            }
+        } else if (acao.equals("D")) {
+            estado.receberDano(estado.getPontosVidaMaxima());
         }
-
-        if (modoBerserker && danoCausado > 0) {
-            danoCausado *= 3;
-            ui.imprimirNarrativa("O dano foi triplicado pela furia do Berserker.");
-        }
-
-        if (danoCausado > 0) {
-            monstro.receberDano(danoCausado);
-            ui.imprimirNarrativa(monstro.getNome() + " recebeu " + danoCausado + " pontos de dano.");
-        }
-
-        return true;
     }
 
-    private void escolherItemEquipamento() {
-        List<Item> inventario = estado.getInventario();
+    private void exibirMenuItens() {
         ui.imprimir("Inventario Disponivel:");
-        for (int i = 0; i < inventario.size(); i++) {
-            ui.imprimir((i + 1) + ". " + inventario.get(i).getNome() + " (" + inventario.get(i).getDescricao() + ")");
+        List<Item> itens = estado.getInventario();
+        for (int i = 0; i < itens.size(); i++) {
+            Item item = itens.get(i);
+            String extra = "";
+            if (item == Item.TREVO_AUTORIZACAO) extra = " (" + estado.getUsosRestantesTrevo() + " usos)";
+            ui.imprimir((i + 1) + ". " + item.getNome() + " (" + item.getDescricao() + ")" + extra);
         }
-        if (estado.isSalsichinhaVivo()) {
-            ui.imprimir("S. Alternar postura de ataque do Salsichinha");
-        }
-
-        String escolha = ui.lerEntrada("Selecione o numero do item ou [S]:").toUpperCase();
-        if (escolha.equals("S") && estado.isSalsichinhaVivo()) {
-            estado.alternarSalsichinhaAtaque();
-            ui.imprimirNarrativa("Postura do Salsichinha atualizada.");
-        } else {
-            try {
-                int indice = Integer.parseInt(escolha) - 1;
-                if (indice >= 0 && indice < inventario.size()) {
-                    estado.setItemEquipado(inventario.get(indice));
-                    ui.imprimirNarrativa("Item equipado: " + inventario.get(indice).getNome());
-                }
-            } catch (NumberFormatException ignored) {
-            }
-        }
+        ui.imprimir("S. Alternar postura de ataque do Salsichinha");
     }
 
     private int processarItemJogador(Item item) {
         switch (item) {
-            case ESPADA_SIMPLES:
-                return calcularDano(1, monstro.getNumeroSecreto());
-            case GUIA_ATENDIMENTO:
-                return calcularDano(2, monstro.getNumeroSecreto());
-            case FATURAMENTUS:
-                return processarFaturamentus();
-            case AZAH_TRANSMISSAO:
-                return processarAzahTransmissao();
-            case COLAR_ESTATUA:
-                return processarColarEstatua();
-            case ESPADA_ZG:
-                return calcularDano(40, monstro.getNumeroSecreto());
+            case ESPADA_SIMPLES: return calcularDano(1, monstro.getNumeroSecreto());
+            case GUIA_ATENDIMENTO: return calcularDano(2, monstro.getNumeroSecreto());
+            case FATURAMENTUS: return processarFaturamentus();
+            case AZAH_TRANSMISSAO: return processarAzahTransmissao();
+            case COLAR_ESTATUA: return processarColarEstatua();
+            case ESPADA_ZG: return calcularDano(40, monstro.getNumeroSecreto());
             case BOMBA_MAGICA:
-                if (batalhaWorm) {
-                    processarBombaWorm();
+                if (batalhaWorm) processarBombaWorm();
+                else processarBombaNormal();
+                return 0;
+            case VANISH:
+                if (!estado.isUsouVanishBatalhaAtual() && estado.isSalsichinhaVivo()) {
+                    ui.imprimirNarrativa("Salsichinha late poderosamente e usa VANISH! A energia de ataque do inimigo caiu para zero.");
+                    turnosRecuperacaoVanish = monstro.getQuantidadeSorteiosTurno();
+                    estado.setUsouVanishBatalhaAtual(true);
+                    estado.setSalsichinhaAtivoParaAtaque(false);
+                    ui.imprimirNarrativa("Salsichinha ficou exausto apos a habilidade. Ele nao pode mais realizar ataques combinados nesta batalha.");
                 } else {
-                    processarBombaNormal();
+                    ui.imprimirNarrativa("O Vanish ja foi usado nesta batalha ou Salsichinha nao esta apto a lutar.");
                 }
                 return 0;
             default:
@@ -214,8 +166,22 @@ public class MotorBatalha {
     }
 
     private int calcularDano(int quantidadeSorteios, int numeroAlvo) {
+        if (batalhaWorm && !wormExposto) {
+            ui.imprimirNarrativa("O Worm esta enterrado. E necessario usar a Bomba Magica antes de atacar com esta arma.");
+            return 0;
+        }
+
         List<Integer> sorteios = realizarSorteios(quantidadeSorteios, monstro.getPontosVidaMaxima());
         ui.imprimirNarrativa("Numeros sorteados: " + sorteios);
+
+        if (estado.getUsosRestantesTrevo() > 0 && !sorteios.contains(numeroAlvo)) {
+            boolean usarTrevo = ui.lerSimNao("Seu ataque vai falhar. Deseja usar o Trevo da Autorizacao para garantir o acerto? (Restam " + estado.getUsosRestantesTrevo() + " usos)");
+            if (usarTrevo) {
+                estado.decrementarUsoTrevo();
+                sorteios.add(numeroAlvo);
+                ui.imprimirNarrativa("A magia do trevo guiou a sua arma diretamente para o alvo.");
+            }
+        }
 
         long acertos = sorteios.stream().filter(n -> n == numeroAlvo).count();
         int dano = (int) (acertos * numeroAlvo);
@@ -229,83 +195,111 @@ public class MotorBatalha {
     }
 
     private int processarFaturamentus() {
-        int dano = calcularDano(4, monstro.getNumeroSecreto());
-        if (dano == 0) {
-            estado.setPenalidadeFaturamentus(estado.getPenalidadeFaturamentus() + 2);
-            ui.imprimirNarrativa("Penalidade Faturamentus ativada. O proximo ataque do monstro causara +2 de dano.");
+        if (batalhaWorm && !wormExposto) {
+            ui.imprimirNarrativa("O Worm esta enterrado. E necessario usar a Bomba Magica antes de atacar.");
+            return 0;
         }
+
+        List<Integer> sorteios = realizarSorteios(4, monstro.getPontosVidaMaxima());
+        ui.imprimirNarrativa("Numeros sorteados: " + sorteios);
+
+        long acertos = sorteios.stream().filter(n -> n == monstro.getNumeroSecreto()).count();
+
+        if (acertos == 0) {
+            ui.imprimirNarrativa("O ataque nao atingiu o numero secreto.");
+            ui.imprimirNarrativa("Penalidade Faturamentus ativada. O proximo ataque do monstro causara +2 de dano.");
+            estado.setPenalidadeFaturamentus(2);
+            return 0;
+        }
+
+        int dano = (int) (acertos * monstro.getNumeroSecreto());
+        ui.imprimirNarrativa("Numero secreto atingido " + acertos + " vez(es). Dano calculado: " + dano);
         return dano;
     }
 
     private int processarAzahTransmissao() {
-        List<Integer> sorteios = realizarSorteios(11, monstro.getPontosVidaMaxima());
-        ui.imprimirNarrativa("Numeros sorteados com Azah: " + sorteios);
-
-        long acertos = sorteios.stream().filter(n -> n == monstro.getNumeroSecreto()).count();
-        int ultimoSorteado = sorteios.get(sorteios.size() - 1);
-        estado.setUltimoSorteioAzah(ultimoSorteado);
-
-        if (acertos > 0) {
-            estado.setPenalidadeAzah(false);
-            return (int) (acertos * monstro.getNumeroSecreto());
-        } else {
-            estado.setPenalidadeAzah(true);
-            ui.imprimirNarrativa("Falha no ataque Azah. Se o monstro acertar, o dano sera calculado com base no ultimo numero sorteado (" + ultimoSorteado + ").");
+        if (batalhaWorm && !wormExposto) {
+            ui.imprimirNarrativa("O Worm esta enterrado. E necessario usar a Bomba Magica antes de atacar.");
             return 0;
         }
+
+        List<Integer> sorteios = realizarSorteios(11, monstro.getPontosVidaMaxima());
+        ui.imprimirNarrativa("Numeros sorteados: " + sorteios);
+        estado.setUltimoSorteioAzah(sorteios.get(sorteios.size() - 1));
+
+        long acertos = sorteios.stream().filter(n -> n == monstro.getNumeroSecreto()).count();
+
+        if (acertos == 0) {
+            ui.imprimirNarrativa("O ataque falhou. A penalidade da Capa Azah foi ativada para o proximo turno do monstro!");
+            estado.setPenalidadeAzah(true);
+            return 0;
+        }
+
+        int dano = (int) (acertos * monstro.getNumeroSecreto());
+        ui.imprimirNarrativa("Numero secreto atingido " + acertos + " vez(es). Dano calculado: " + dano);
+        return dano;
     }
 
     private int processarColarEstatua() {
+        if (batalhaWorm && !wormExposto) {
+            ui.imprimirNarrativa("O Worm esta enterrado.");
+            return 0;
+        }
+
+        ui.imprimirNarrativa("O Colar da Estatua drena sua forca vital (-3 HP) para liberar poder.");
         estado.receberDano(3);
-        ui.imprimirNarrativa("O uso do Colar consumiu 3 pontos de vida da sua forca vital.");
+        if (!estado.isVivo()) return 0;
+
         return calcularDano(11, monstro.getNumeroSecreto());
     }
 
     private void processarBombaNormal() {
-        int tentativas = Math.max(1, (int) (monstro.getPontosVidaMaxima() * 0.8));
-        List<Integer> sorteios = realizarSorteios(tentativas, monstro.getPontosVidaMaxima());
+        if (estado.getErrosBomba() >= 3) {
+            ui.imprimirNarrativa("A bomba instavel explodiu em suas maos antes do lancamento! (-2 HP)");
+            estado.receberDano(2);
+            if (!estado.isVivo()) return;
+        }
+
+        List<Integer> sorteios = realizarSorteios(9, monstro.getPontosVidaMaxima());
         ui.imprimirNarrativa("Sorteios da Bomba Magica: " + sorteios);
 
-        if (sorteios.contains(monstro.getNumeroSecreto())) {
+        int limiteAcerto = (int) (monstro.getPontosVidaMaxima() * 0.8);
+        boolean acertou = sorteios.stream().anyMatch(n -> n <= limiteAcerto);
+
+        if (acertou) {
+            ui.imprimirNarrativa("A Bomba Magica atordoou o monstro!");
             monstroAtordoado = true;
             estado.resetarErrosBomba();
-            ui.imprimirNarrativa("A explosao atingiu o alvo. O monstro foi atordoado.");
         } else {
             estado.adicionarErroBomba();
-            if (estado.getErrosBomba() >= 3) {
-                estado.receberDano(2);
-                ui.imprimirNarrativa("A bomba falhou consecutivamente e causou 2 de dano a voce.");
-            } else {
-                ui.imprimirNarrativa("A bomba errou o alvo.");
-            }
+            ui.imprimirNarrativa("A bomba errou o alvo. (Erro " + estado.getErrosBomba() + ")");
         }
     }
 
     private void processarBombaWorm() {
-        int tentativas = Math.max(1, (int) (monstro.getPontosVidaMaxima() * 0.8));
-        List<Integer> sorteios = realizarSorteios(tentativas, monstro.getPontosVidaMaxima());
+        if (estado.getErrosBomba() >= 3) {
+            ui.imprimirNarrativa("A bomba instavel explodiu em suas maos antes do lancamento! (-2 HP)");
+            estado.receberDano(2);
+            if (!estado.isVivo()) return;
+        }
+
+        List<Integer> sorteios = realizarSorteios(9, monstro.getPontosVidaMaxima());
         ui.imprimirNarrativa("Sorteios da Bomba Magica buscando o Worm (Posicao atual: " + posicaoWorm + "): " + sorteios);
 
         if (sorteios.contains(posicaoWorm)) {
+            ui.imprimirNarrativa("A explosao desenterrou o Worm. Ele esta vulneravel a ataques diretos.");
             wormExposto = true;
             estado.resetarErrosBomba();
-            ui.imprimirNarrativa("A explosao desenterrou o Worm. Ele esta vulneravel a ataques diretos.");
         } else {
+            ui.imprimirNarrativa("A bomba explodiu no local errado.");
             estado.adicionarErroBomba();
-            posicaoWorm = gerador.nextInt(monstro.getPontosVidaMaxima()) + 1;
-            if (estado.getErrosBomba() >= 3) {
-                estado.receberDano(2);
-                ui.imprimirNarrativa("Falha critica com a bomba. Dano de 2 pontos recebido.");
-            } else {
-                ui.imprimirNarrativa("A bomba explodiu no local errado.");
-            }
         }
     }
 
     private void executarTurnoMonstro() {
         ui.imprimir("\nTurno do Inimigo:");
 
-        if (monstro.getNome().equals("Sandubinha reverse") && ultimoItemUtilizadoJogador != null && ultimoItemUtilizadoJogador != Item.SALSICHINHA) {
+        if (monstro.getNome().equals("Sandubinha reverse") && ultimoItemUtilizadoJogador != null && ultimoItemUtilizadoJogador != Item.SALSICHINHA && ultimoItemUtilizadoJogador != Item.VANISH) {
             executarAtaqueCopia();
             return;
         }
@@ -322,39 +316,47 @@ public class MotorBatalha {
     }
 
     private void executarAtaqueCopia() {
-        ui.imprimirNarrativa("A estatua replica as propriedades do seu ultimo item.");
-
+        ui.imprimirNarrativa("Sandubinha reverse copia o seu ultimo movimento!");
         int sorteiosCopia = 1;
         switch (ultimoItemUtilizadoJogador) {
-            case GUIA_ATENDIMENTO:
-                sorteiosCopia = 2;
-                break;
-            case FATURAMENTUS:
-                sorteiosCopia = 4;
-                break;
+            case GUIA_ATENDIMENTO: sorteiosCopia = 2; break;
+            case FATURAMENTUS: sorteiosCopia = 4; break;
             case AZAH_TRANSMISSAO:
-            case COLAR_ESTATUA:
-                sorteiosCopia = 11;
-                break;
-            case ESPADA_ZG:
-                sorteiosCopia = 40;
-                break;
-            case BOMBA_MAGICA:
-                ui.imprimirNarrativa("A estatua utilizou a magia de atordoamento contra voce.");
-                ui.imprimirNarrativa("Voce perdeu temporariamente sua capacidade de atacar.");
-                return;
-            default:
-                sorteiosCopia = 1;
-                break;
+            case COLAR_ESTATUA: sorteiosCopia = 11; break;
+            case ESPADA_ZG: sorteiosCopia = 40; break;
+            case BOMBA_MAGICA: sorteiosCopia = 9; break;
         }
         processarAtaqueMonstro(sorteiosCopia);
     }
 
     private void processarAtaqueMonstro(int quantidadeSorteios) {
-        List<Integer> sorteios = realizarSorteios(quantidadeSorteios, estado.getPontosVidaMaxima());
+        int sorteiosAtuais = quantidadeSorteios;
+        if (turnosRecuperacaoVanish > 0) {
+            sorteiosAtuais = quantidadeSorteios - turnosRecuperacaoVanish;
+            if (sorteiosAtuais < 0) sorteiosAtuais = 0;
+            ui.imprimirNarrativa("O monstro esta sob efeito do Vanish e so conseguiu realizar " + sorteiosAtuais + " sorteios.");
+            turnosRecuperacaoVanish--;
+        }
+
+        if (sorteiosAtuais == 0) {
+            ui.imprimirNarrativa("O inimigo nao tem forcas para atacar neste turno.");
+            return;
+        }
+
+        List<Integer> sorteios = realizarSorteios(sorteiosAtuais, estado.getPontosVidaMaxima());
         ui.imprimirNarrativa("Numeros sorteados pelo inimigo: " + sorteios);
 
         long acertos = sorteios.stream().filter(n -> n == numeroSecretoJogador).count();
+
+        if (acertos > 0 && estado.possuiItem(Item.SIMULADOR_GLOZIUM) && estado.getEnergiaSimuladorGlozium() > 0 && estado.isSalsichinhaVivo()) {
+            boolean usarSimulador = ui.lerSimNao("O Simulador de Glozium apitou! Voce vai sofrer dano. Deseja usar 1 energia para esquivar do ataque?");
+            if (usarSimulador) {
+                estado.consumirEnergiaSimulador();
+                numeroSecretoJogador = gerador.nextInt(estado.getPontosVidaMaxima()) + 1;
+                ui.imprimirNarrativa("Simulador ativado! Voce saltou da trajetoria e seu numero secreto foi alterado para " + numeroSecretoJogador + ".");
+                acertos = 0;
+            }
+        }
 
         if (acertos > 0) {
             int danoRecebido;
@@ -376,11 +378,11 @@ public class MotorBatalha {
         }
     }
 
-    private List<Integer> realizarSorteios(int quantidade, int valorMaximo) {
-        List<Integer> lista = new ArrayList<>();
+    private List<Integer> realizarSorteios(int quantidade, int limite) {
+        List<Integer> sorteios = new ArrayList<>();
         for (int i = 0; i < quantidade; i++) {
-            lista.add(gerador.nextInt(valorMaximo) + 1);
+            sorteios.add(gerador.nextInt(limite) + 1);
         }
-        return lista;
+        return sorteios;
     }
 }

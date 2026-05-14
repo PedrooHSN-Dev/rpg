@@ -4,7 +4,6 @@ import java.util.Scanner;
 
 public class InterfaceUsuario {
     private final Scanner scanner;
-    private final int atrasoTextoMilissegundos = 1;
 
     public InterfaceUsuario() {
         this.scanner = new Scanner(System.in);
@@ -19,6 +18,7 @@ public class InterfaceUsuario {
             System.out.print(caractere);
             System.out.flush();
             try {
+                int atrasoTextoMilissegundos = 1;
                 Thread.sleep(atrasoTextoMilissegundos);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();

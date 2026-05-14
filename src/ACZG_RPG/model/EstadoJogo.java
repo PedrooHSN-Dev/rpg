@@ -105,6 +105,12 @@ public class EstadoJogo {
         return salsichinhaAtivoParaAtaque && salsichinhaVivo;
     }
 
+    public void setSalsichinhaAtivoParaAtaque(boolean ativo) {
+        if (salsichinhaVivo) {
+            this.salsichinhaAtivoParaAtaque = ativo;
+        }
+    }
+
     public void alternarSalsichinhaAtaque() {
         if (salsichinhaVivo) {
             this.salsichinhaAtivoParaAtaque = !this.salsichinhaAtivoParaAtaque;
